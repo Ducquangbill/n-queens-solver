@@ -1,0 +1,185 @@
+\documentclass[a4paper,fleqn]{cas-sc}
+
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{siunitx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+
+% Custom commands
+\newcommand{\nqueens}{N-Queens}
+\newcommand{\sat}{SAT}
+\newcommand{\cnf}{CNF}
+\newcommand{\amo}{AMO}
+\newcommand{\alo}{ALO}
+
+\begin{document}
+
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{SAT Encoding Comparison for N-Queens}
+\shortauthors{Author et al.}
+
+\title{Comparative Analysis of SAT Encoding Methods and Solvers for the N-Queens Problem}
+
+\author{Author Name}[type=editor,
+    auid=000,
+    bioid=1,
+    orcid=0000-0000-0000-0000]
+
+\address{Institution, City, Country}
+
+\begin{abstract}
+The N-Queens problem is a classic combinatorial constraint satisfaction problem.
+This paper presents a comprehensive empirical comparison of SAT encoding methods
+for N-Queens, evaluating four cardinality constraint encodings (binary, commander,
+product, sequential counter) across four SAT solvers (CaDiCaL, Glucose, Kissat,
+CryptoMiniSAT), and comparing against a CP-SAT baseline.
+Experiments on board sizes N=8 to 16 show that sequential counter encoding with
+Glucose4 achieves the fastest solve times, while binary encoding produces the
+smallest CNF formulas. SAT solvers consistently outperform CP-SAT for this
+problem class.
+\end{abstract}
+
+\begin{keywords}
+N-Queens \sep SAT encoding \sep cardinality constraints \sep CP-SAT \sep empirical evaluation
+\end{keywords}
+
+\maketitle
+
+\section{Introduction}
+The \nqueens\ problem asks to place $N$ queens on an $N \times N$ chessboard
+such that no two queens attack each other. This problem serves as a benchmark
+for constraint satisfaction and SAT solving techniques.
+
+SAT-based approaches encode the problem as a Boolean satisfiability instance
+in Conjunctive Normal Form (\cnf). The efficiency critically depends on the
+encoding of cardinality constraints (exactly-one per row/column, at-most-one
+per diagonal). This paper evaluates four encoding methods using the PySAT
+library.
+
+\section{Methodology}
+
+\subsection{Variable Encoding}
+Boolean variable $x_{r,c}$ represents a queen at row $r$, column $c$ (1-indexed).
+Total primary variables: $N^2$.
+
+\subsection{Constraints}
+\begin{itemize}
+    \item Exactly one queen per row: $\sum_c x_{r,c} = 1$ for all $r$
+    \item Exactly one queen per column: $\sum_r x_{r,c} = 1$ for all $c$
+    \item At most one queen per diagonal ($\searrow$): $\sum_{r-c=d} x_{r,c} \le 1$
+    \item At most one queen per anti-diagonal ($\swarrow$): $\sum_{r+c=s} x_{r,c} \le 1$
+\end{itemize}
+
+\subsection{Encoding Methods}
+\begin{enumerate}
+    \item \textbf{Binary (pairwise)}: $\neg x_i \lor \neg x_j$ for all pairs. $O(k^2)$ clauses.
+    \item \textbf{Commander (sorting network)}: Hierarchical grouping. $O(k \log k)$ clauses.
+    \item \textbf{Product (cardinality network)}: 2D product construction. $O(k \sqrt{k})$ clauses.
+    \item \textbf{Sequential counter (Sinz)}: Auxiliary counter variables. $O(k)$ clauses.
+\end{enumerate}
+
+\subsection{Solvers Evaluated}
+\begin{itemize}
+    \item \textbf{CaDiCaL 1.9.5} (cadical195): CDCL with inprocessing
+    \item \textbf{Glucose 4.2} (glucose4): Parallel, clause sharing
+    \item \textbf{Kissat 2024} (kissat404): Simplified CaDiCaL
+    \item \textbf{CryptoMiniSAT 5} (cryptominisat5): XOR handling
+    \item \textbf{OR-Tools CP-SAT} (cp-sat): Constraint programming baseline
+\end{itemize}
+
+\section{Experimental Setup}
+Experiments run on Intel/AMD CPU, 16GB RAM. Time limit: 120 seconds per instance.
+Board sizes: $N \in \{8, 10, 12, 14, 16\}$. Sequential execution (multiprocessing
+causes segfaults with native SAT solver libraries).
+
+\section{Results}
+
+\subsection{Scaling Behavior}
+Figure~\ref{fig:scaling} shows solve time vs. $N$ for each encoding method.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{results/scaling_plot.png}
+\caption{Solve time scaling with board size N for each encoding method.}
+\label{fig:scaling}
+\end{figure}
+
+\subsection{Encoding Comparison}
+Figure~\ref{fig:heatmap} shows heatmaps of median solve time by encoding and solver.
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.45\textwidth}
+\includegraphics[width=\textwidth]{results/heatmap_n8.png}
+\caption{$N=8$}
+\end{subfigure}
+\begin{subfigure}{0.45\textwidth}
+\includegraphics[width=\textwidth]{results/heatmap_n10.png}
+\caption{$N=10$}
+\end{subfigure}
+\begin{subfigure}{0.45\textwidth}
+\includegraphics[width=\textwidth]{results/heatmap_n12.png}
+\caption{$N=12$}
+\end{subfigure}
+\begin{subfigure}{0.45\textwidth}
+\includegraphics[width=\textwidth]{results/heatmap_n14.png}
+\caption{$N=14$}
+\end{subfigure}
+\caption{Heatmaps: median solve time (seconds) by encoding and solver.}
+\label{fig:heatmap}
+\end{figure}
+
+\subsection{Formula Size}
+Figure~\ref{fig:clauses} shows clause and variable counts by encoding.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{results/clause_variables.png}
+\caption{CNF clause count (left) and variable count (right) by encoding.}
+\label{fig:clauses}
+\end{figure}
+
+\subsection{SAT vs CP-SAT Comparison}
+Table~\ref{tab:comparison} compares best SAT solver times against CP-SAT.
+
+\begin{table}[htbp]
+\centering
+\caption{Best solve times (seconds) by method and board size.}
+\label{tab:comparison}
+\input{results/comparison_table.tex}
+\end{table}
+
+\section{Discussion}
+\begin{itemize}
+    \item \textbf{Sequential counter} encoding achieves fastest solve times but introduces many auxiliary variables.
+    \item \textbf{Binary} encoding produces smallest formulas but scales poorly due to $O(k^2)$ clauses.
+    \item \textbf{Glucose4} is the most consistent SAT solver across encodings.
+    \item \textbf{SAT solvers} significantly outperform CP-SAT for N-Queens.
+    \item CP-SAT time does not scale monotonically due to its different search strategy.
+\end{itemize}
+
+\section{Conclusion}
+For N-Queens, sequential counter encoding with Glucose4 provides the best
+performance. SAT-based approaches are superior to CP-SAT for this problem class.
+
+\section*{Data Availability}
+Source code and experimental data available at:
+\texttt{https://github.com/username/n-queens-solver}
+
+\section*{CRediT Authorship Contribution Statement}
+Author: Conceptualization, Methodology, Software, Validation, Writing.
+
+\section*{Declaration of Competing Interest}
+The author declares no competing interests.
+
+\bibliographystyle{cas-model2-names}
+\bibliography{references}
+
+\end{document}
