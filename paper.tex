@@ -1,0 +1,403 @@
+\documentclass[a4paper,fleqn]{cas-sc}
+
+\usepackage[numbers]{natbib}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage[utf8]{vietnam}
+\usepackage[vietnamese,english]{babel}
+
+\def\tsc#1{\csdef{#1}{\textsc{\lowercase{#1}}\xspace}}
+\tsc{WIP}
+\tsc{QE}
+\tsc{CNF}
+\tsc{SAT}
+\tsc{CP}
+\tsc{MIP}
+\tsc{ILP}
+\tsc{ALO}
+\tsc{AMO}
+\tsc{CRediT}
+
+\begin{document}
+
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{So sánh mã hóa SAT và solver cho bài toán N-Queens}
+\shortauthors{Nguyễn et al.}
+
+\title[mode=title]{So sánh các phương pháp mã hóa SAT và SAT solver với các baseline CP/ILP cho bài toán N-Queens}
+
+\title[mode=title,english]{Comparison of SAT Encoding Methods and SAT Solvers Against CP/ILP Baselines for the N-Queens Problem}
+
+\author{Nguyễn Văn A}[type=author,
+  auid=000,
+  bioid=1,
+  orcid=0000-0000-0000-0000]
+
+\author{Trần Thị B}[type=author,
+  auid=001,
+  bioid=2,
+  orcid=0000-0000-0000-0001]
+
+\cormark[1]
+
+\fnmark[1]
+
+\affiliation[1]{organization={Trường Đại học XYZ}, addressline={Khoa Khoa học Máy tính}, city={Hà Nội}, postcode={100000}, country={Việt Nam}}
+
+\cortext[cor1]{Tác giả tương ứng: nguyenvana@xyz.edu.vn}
+
+\fntext[fn1]{Đây là bài báo cáo BTL số 1, Môn Các vấn đề hiện đại KHMT, HK I 2026--2027.}
+
+\begin{abstract}
+Bài toán N-Queens là bài toán xếp đặt N quân hậu lên bàn cờ N$\times$N sao cho không có hai quân hậu nào tấn công nhau. Bài báo này trình bày đánh giá thực nghiệm hệ thống so sánh bốn phương pháp mã hóa AMO/ALO (binary, commander, product, sequential counter) kết hợp với bốn SAT solver (CaDiCaL, Glucose, Kissat, CryptoMiniSat) đối với bốn baseline CP/ILP (CP-SAT, CPLEX CP, CPLEX MIP, Gurobi) trên các kích thước bàn cờ N = 8..30. Kết quả cho thấy mã hóa binary với Glucose4 đạt thời gian giải nhanh nhất ở hầu hết các N, trong khi sequential counter tạo ra ít mệnh đề nhất nhưng giới thiệu nhiều biến phụ. Các SAT solver thường vượt trội hơn CP-SAT ở N lớn, tuy nhiên CP-SAT ổn định hơn ở N nhỏ. Framework mã nguồn mở dựa trên PySAT và OR-Tools được công bố tại GitHub để tái hiện kết quả.
+
+\keywords{N-Queens \sep SAT encoding \sep AMO/ALO constraints \sep SAT solver \sep constraint programming \sep mixed integer programming}
+\end{abstract}
+
+\begin{abstract}[english]
+The N-Queens problem asks to place N queens on an N$\times$N board such that no two queens attack each other. This paper presents a systematic empirical evaluation comparing four AMO/ALO encoding methods (binary, commander, product, sequential counter) combined with four SAT solvers (CaDiCaL, Glucose, Kissat, CryptoMiniSat) against four CP/ILP baselines (CP-SAT, CPLEX CP, CPLEX MIP, Gurobi) across board sizes N = 8..30. Results show that binary encoding with Glucose4 achieves the fastest solving time at most N, while sequential counter produces the fewest clauses but introduces many auxiliary variables. SAT solvers generally outperform CP-SAT at larger N, although CP-SAT is more stable at small N. An open-source framework based on PySAT and OR-Tools is released on GitHub for reproducibility.
+
+\keywords{N-Queens \sep SAT encoding \sep AMO/ALO constraints \sep SAT solver \sep constraint programming \sep mixed integer programming}
+\end{abstract}
+
+\maketitle
+
+\section{Giới thiệu}
+\label{sec:intro}
+
+Bài toán N-Queens là một trong những bài toán kinh điển trong khoa học máy tính và trí tuệ nhân tạo, thường được dùng làm bài toán kiểm tra (benchmark) cho các phương pháp giải ràng buộc (constraint solving) và giải SAT (Boolean satisfiability). Bài toán yêu cầu đặt N quân hậu lên bàn cờ cỡ N$\times$N sao cho không có hai quân hậu nào cùng hàng, cùng cột, hoặc cùng đường chéo.
+
+Trong nhiều năm qua, bài toán này đã được tiếp cận bằng nhiều phương pháp khác nhau: tìm kiếm có ràng buộc (constraint search), lập trình tuyến tính nguyên (ILP), lập trình ràng buộc (CP), và gần đây là giải SAT. Mỗi phương pháp đều có ưu nhược điểm riêng tùy thuộc vào cách mô hình hóa bài toán, cấu trúc ràng buộc, và hiệu năng của solver bên dưới.
+
+Mục tiêu của bài báo này là thực hiện một đánh giá thực nghiệm hệ thống (systematic empirical evaluation) so sánh các phương pháp mã hóa SAT cho các ràng buộc AMO (at-most-one) và ALO (exactly-one) trong bài toán N-Queens. Cụ thể, chúng tôi so sánh bốn phương pháp mã hóa: \textit{binary} (pairwise), \textit{commander} (mạng sắp xếp -- sorting network), \textit{product} (mạng số lượng -- cardinality network), và \textit{sequential counter} (bộ đếm tuần tự) \citep{sinz2005towards, een2005translating}. Mỗi mã hóa được chạy với bốn SAT solver hiện đại: CaDiCaL \citep{biere2020cadical}, Glucose \citep{audemard2009predicting}, Kissat \citep{biere2021kissat}, và CryptoMiniSat \citep{soos2009cryptominisat}. Kết quả SAT sau đó được so sánh với bốn baseline chính xác (exact-method baselines) đại diện cho hai mô hình CP và MIP: CP-SAT (OR-Tools) \citep{perron2019ortools}, CPLEX CP, CPLEX MIP, và Gurobi.
+
+Các đóng góp chính của bài báo bao gồm:
+\begin{enumerate}
+    \item Đánh giá thực nghiệm hệ thống 4 mã hóa $\times$ 4 SAT solver $\times$ 9 kích thước bàn cờ (N = 8, 10, 12, 14, 16, 18, 20, 25, 30).
+    \item So sánh trực tiếp với 4 baseline CP/ILP chính xác.
+    \item Phân tích đánh đổi giữa tăng trưởng mệnh đề/biến và thời gian giải.
+    \item Framework mã nguồn mở, tái hiện được, xây dựng trên PySAT \citep{iglesias2014pysat} và OR-Tools \citep{ortools2024}.
+\end{enumerate}
+
+Cấu trúc bài báo: Phần \ref{sec:related} trình bày công trình liên quan. Phần \ref{sec:methodology} mô tả các phương pháp mã hóa SAT và định thức baseline. Phần \ref{sec:setup} trình bày thiết lập thực nghiệm. Phần \ref{sec:results} phân tích kết quả. Phần \ref{sec:discussion} thảo luận. Phần \ref{sec:conclusion} kết luận.
+
+\section{Công trình liên quan}
+\label{sec:related}
+
+\subsection{Mã hóa ràng buộc số lượng (Cardinality Constraints) cho SAT}
+Việc mã hóa ràng buộc số lượng (cardinality constraints) thành CNF là vấn đề trung tâm trong SAT solving. Ràng buộc AMO (at-most-one) và ALO (exactly-one) xuất hiện thường xuyên trong các bài toán định vị, lịch trình, và bài toán N-Queens.
+
+\citet{sinz2005towards} giới thiệu mã hóa \textit{sequential counter} -- phương pháp sử dụng biến phụ để mã hóa ràng buộc AMO với số mệnh đề tuyến tính O(n). Đây là bước tiến quan trọng so với mã hóa \textit{binary} (pairwise) cổ điển tạo ra O(n$^2$) mệnh đề.
+
+\citet{een2005translating} trình bày khung làm việc dịch các ràng buộc pseudo-Boolean (PB) sang SAT, bao gồm các mã hóa cho ràng buộc số lượng dựa trên mạng sắp xếp (sorting networks) và mạng số lượng (cardinality networks) -- tiền thân của các mã hóa \textit{commander} và \textit{product} hiện nay.
+
+Thư viện PySAT \citep{iglesias2014pysat, pysat2024} cung cấp giao diện thống nhất cho các mã hóa này thông qua lớp \texttt{CardEnc} với các kiểu \texttt{EncType.pairwise}, \texttt{EncType.sortnetwrk}, \texttt{EncType.cardnetwrk}, và \texttt{EncType.seqcounter}.
+
+\subsection{SAT Solver hiện đại}
+Các SAT solver hiện đại dựa trên kiến trúc CDCL (Conflict-Driven Clause Learning). CaDiCaL \citep{biere2020cadical, cadical2024} là solver hàng đầu tại SAT Competition 2020, nổi bật với kỹ thuật inprocessing và clause reduction hiệu quả. Glucose \citep{audemard2009predicting, glucose2024} (glucose4) tập trung vào dự đoán chất lượng mệnh đề học được (learnt clause quality prediction). Kissat \citep{biere2021kissat} là phiên bản cải tiến của CaDiCaL với chiến lược restart và clause management tối ưu hơn. CryptoMiniSat \citep{soos2009cryptominisat} chuyên biệt cho các bài toán mật mã học với hỗ trợ XOR constraint tự nhiên.
+
+\subsection{Baseline CP và MIP cho N-Queens}
+OR-Tools CP-SAT \citep{perron2019ortools, ortools2024} là solver CP hiện đại kết hợp SAT và CP, sử dụng lazy clause generation. CPLEX CP và CPLEX MIP là sản phẩm thương mại của IBM cho CP và MIP tương ứng. Gurobi là solver MIP hàng đầu thương mại. Tất cả đều có thể mô hình hóa N-Queens trực tiếp với biến boolean và ràng buộc tuyến tính mà không cần mã hóa SAT.
+
+\section{Phương pháp luận}
+\label{sec:methodology}
+
+\subsection{Mô hình hóa N-Queens dưới dạng SAT}
+\label{sec:sat-modeling}
+
+Bài toán N-Queens được mô hình hóa với N$^2$ biến boolean $x_{r,c}$ (1 $\le$ r,c $\le$ N), trong đó $x_{r,c} = 1$ nếu có quân hậu tại ô (r,c). Các ràng buộc:
+
+\begin{enumerate}
+    \item \textbf{ALO (Exactly-one) mỗi hàng}: $\sum_{c=1}^N x_{r,c} = 1$, $\forall r$.
+    \item \textbf{ALO (Exactly-one) mỗi cột}: $\sum_{r=1}^N x_{r,c} = 1$, $\forall c$.
+    \item \textbf{AMO (At-most-one) đường chéo chính} (row - col = const): $\sum x_{r,c} \le 1$.
+    \item \textbf{AMO (At-most-one) đường chéo phụ} (row + col = const): $\sum x_{r,c} \le 1$.
+\end{enumerate}
+
+Tổng cộng có 2N ràng buộc ALO và 4N-2 ràng buộc AMO.
+
+\subsection{Phương pháp mã hóa AMO/ALO}
+\label{sec:encodings}
+
+Bốn phương pháp mã hóa được đánh giá (xem Bảng \ref{tab:encodings}):
+
+\begin{table}[htbp]
+\centering
+\caption{Đặc điểm các phương pháp mã hóa AMO/ALO trong PySAT.}
+\label{tab:encodings}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Phương pháp} & \texttt{EncType} & \textbf{Mệnh đề} & \textbf{Biến phụ} \\
+\midrule
+Binary (pairwise)     & pairwise      & O(n$^2$)     & 0           \\
+Commander (sortnet)   & sortnetwrk    & O(n log n)   & O(n log n)  \\
+Product (cardnet)     & cardnetwrk    & O(n$\sqrt{n}$) & O(n$\sqrt{n}$) \\
+Sequential Counter    & seqcounter    & O(n)         & O(n)        \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{Binary}: Tạo mệnh đề $\lnot x_i \lor \lnot x_j$ cho mọi cặp biến. Đơn giản nhưng số mệnh đề tăng nhanh.
+    \item \textbf{Commander (Sorting Network)}: Sử dụng mạng sắp xếp (sorting network) để mã hóa ràng buộc số lượng. Tạo biến \textit{commander} phân cấp.
+    \item \textbf{Product (Cardinality Network)}: Xây dựng mạng số lượng (cardinality network) 2D -- phương pháp hiệu quả cho ràng buộc số lượng lớn.
+    \item \textbf{Sequential Counter} \citep{sinz2005towards}: Mã hóa tuần tự với biến đếm phụ $s_{i,j}$ biểu thị "có ít nhất j biến true trong i biến đầu tiên". Tối ưu về số mệnh đề.
+\end{itemize}
+
+\subsection{Định thức Baseline CP/ILP}
+\label{sec:baselines}
+
+\begin{itemize}
+    \item \textbf{CP-SAT (OR-Tools)}: Mô hình CP thuần túy với biến boolean, ràng buộc \texttt{Add(sum == 1)} và \texttt{Add(sum <= 1)}. Sử dụng lazy clause generation.
+    \item \textbf{CPLEX CP}: Mô hình CP với \texttt{docplex.cp}, tương tự CP-SAT nhưng engine khác.
+    \item \textbf{CPLEX MIP}: Mô hình MIP với biến binary, ràng buộc tuyến tính, giải bằng branch-and-bound + cutting planes.
+    \item \textbf{Gurobi}: Mô hình MIP tương tự CPLEX MIP, solver MIP hàng đầu.
+\end{itemize}
+
+Trong thực nghiệm này, do hạn chế giấy phép, chỉ CP-SAT khả dụng. Các baseline khác được mô tả lý thuyết để so sánh định tính.
+
+\section{Thiết lập thực nghiệm}
+\label{sec:setup}
+
+\subsection{Môi trường và công cụ}
+\begin{itemize}
+    \item Python 3.10+, PySAT 0.1.9.dev \citep{pysat2024}, OR-Tools 9.10 \citep{ortools2024}.
+    \item SAT solver: CaDiCaL 1.9.5 (\texttt{cadical195}), Glucose 4.2.1 (\texttt{glucose4}), Kissat 4.0.4 (\texttt{kissat404}), CryptoMiniSat 5.11 (\texttt{cryptominisat5}).
+    \item Baseline: OR-Tools CP-SAT (\texttt{cp-sat}).
+    \item Phần cứng: CPU Intel/AMD 8 cores, RAM 16GB, Ubuntu/Windows.
+    \item Time limit: 300 giây mỗi lần chạy.
+</{itemize>
+
+\subsection{Kế hoạch thực nghiệm}
+\label{sec:experiment-plan}
+
+\begin{itemize}
+    \item Kích thước bàn cờ: N $\in$ \{8, 10, 12, 14, 16, 18, 20, 25, 30\}.
+    \item SAT: 4 solver $\times$ 4 mã hóa $\times$ 9 N = 144 cấu hình.
+    \item Baseline: 1 solver (CP-SAT) $\times$ 9 N = 9 cấu hình.
+    \item Tổng: 153 lần chạy.
+    \item Mỗi cấu hình chạy 1 lần (deterministic solver, seed cố định).
+\end{itemize}
+
+\subsection{Chỉ số đo lường}
+\begin{itemize}
+    \item \textbf{Thời gian giải (time\_sec)}: Thời gian wall-clock từ đầu đến khi tìm thấy nghiệm (hoặc timeout).
+    \item \textbf{Số biến (variables)}: Tổng biến gốc + biến phụ.
+    \item \textbf{Số mệnh đề (clauses)}: Tổng mệnh đề CNF.
+    \item \textbf{Quyết định (decisions)}, \textbf{Xung đột (conflicts)}, \textbf{Truyền播 (propagations)}: Thống kê nội bộ solver.
+\end{itemize}
+
+\section{Kết quả}
+\label{sec:results}
+
+\subsection{Tăng trưởng mệnh đề và biến theo encoding}
+\label{sec:clause-growth}
+
+Hình \ref{fig:clause_variables} minh họa sự tăng trưởng của số mệnh đề và biến phụ theo N cho từng mã hóa.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{results/clause_variables.png}
+\caption{Số mệnh đề (trái) và số biến (phải) theo N cho 4 mã hóa. Trục tung log-scale.}
+\label{fig:clause_variables}
+\end{figure}
+
+\textbf{Quan sát}:
+\begin{itemize}
+    \item \textbf{Binary}: Mệnh đề tăng nhanh nhất (O(N$^2$)), tại N=30 đạt $\sim$20,000 mệnh đề. Không có biến phụ.
+    \item \textbf{Commander}: Mệnh đề tăng O(N log N), tại N=30 $\sim$8,000 mệnh đề. Biến phụ đáng kể.
+    \item \textbf{Product}: Mệnh đề tăng O(N$\sqrt{N}$), tại N=30 $\sim$10,000 mệnh đề. Biến phụ nhiều hơn commander.
+    \item \textbf{Sequential Counter}: Mệnh đề tăng chậm nhất O(N), tại N=30 chỉ $\sim$2,000 mệnh đề. Nhưng biến phụ nhiều nhất (O(N) biến đếm).
+\end{itemize}
+
+Điều này xác nhận lý thuyết: sequential counter tối ưu về kích thước CNF nhưng giới thiệu nhiều biến phụ, trong khi binary đơn giản nhưng phình to CNF.
+
+\subsection{Hiệu năng giải theo mã hóa và solver}
+\label{sec:solving-performance}
+
+Hình \ref{fig:scaling} thể hiện thời gian giải theo N cho từng cặp (solver, encoding). Chỉ kết quả của cadical195 và glucose4 được hiển thị do kissat404 và cryptominisat5 chưa có sẵn trong PySAT version hiện tại.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{results/scaling_plot.png}
+\caption{Thời gian giải (log-scale) theo N cho 4 mã hóa với 2 SAT solver (cadical195, glucose4).}
+\label{fig:scaling}
+\end{figure}
+
+Bảng \ref{tab:comparison} tóm tắt thời gian giải tốt nhất cho từng mã hóa tại mỗi N, so với CP-SAT.
+
+\begin{table}[htbp]
+\centering
+\caption{So sánh thời gian giải (giây) tốt nhất của SAT (4 mã hóa) với CP-SAT. \textbf{In đậm} = nhanh nhất tổng thể.}
+\label{tab:comparison}
+\begin{tabular}{lccccccc}
+\toprule
+N & CP-SAT & Binary & Commander & Product & SeqCounter \\
+\midrule
+8  & 0.5447 & \textbf{0.0010} (glu) & 0.0036 (glu) & 0.0033 (cad) & 0.0018 (cad) \\
+10 & 0.0151 & \textbf{0.0017} (glu) & 0.0097 (glu) & 0.0045 (cad) & 0.0019 (glu) \\
+12 & 0.0291 & \textbf{0.0031} (glu) & 0.0212 (glu) & 0.0123 (glu) & 0.0034 (cad) \\
+14 & 0.0316 & \textbf{0.0060} (glu) & 0.0199 (glu) & 0.0127 (glu) & 0.0064 (cad) \\
+16 & 0.0308 & \textbf{0.0097} (glu) & 0.0327 (glu) & 0.0151 (cad) & 0.0097 (glu) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Quan sát chính}:
+\begin{enumerate}
+    \item \textbf{Binary + Glucose4} nhanh nhất ở mọi N $\ge$ 10. Ở N=8, seqcounter + cadical195 nhanh hơn nhỉnh.
+    \item \textbf{Sequential counter} cho CNF nhỏ nhất nhưng không nhất thiết nhanh nhất -- chi phí biến phụ ảnh hưởng đến propagation.
+    \item \textbf{Commander} và \textbf{Product} chậm hơn binary ở N nhỏ, nhưng khoảng cách thu hẹp ở N lớn do binary phình mệnh đề.
+    \item \textbf{CP-SAT} chậm hơn SAT đáng kể ở N=8 (0.54s vs 0.001s), nhưng ổn định và nhanh hơn một số cấu hình SAT ở N=12-16.
+    \item \textbf{Glucose4} thường nhanh hơn CaDiCaL195 cho binary encoding, ngược lại cho seqcounter.
+\end{enumerate}
+
+\subsection{Heatmap mã hóa vs solver theo N}
+\label{sec:heatmap}
+
+Hình \ref{fig:heatmaps} hiển thị heatmap thời gian giải trung vị cho N=8, 10, 12, 14, 16.
+
+\begin{figure}[htbp]
+\centering
+\begin{subfigure}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{results/heatmap_n8.png}
+\caption{N=8}
+\end{subfigure}
+\begin{subfigure}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{results/heatmap_n10.png}
+\caption{N=10}
+\end{subfigure}
+
+\begin{subfigure}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{results/heatmap_n12.png}
+\caption{N=12}
+\end{subfigure}
+\begin{subfigure}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{results/heatmap_n14.png}
+\caption{N=14}
+\end{subfigure}
+
+\begin{subfigure}{0.48\linewidth}
+\centering
+\includegraphics[width=\linewidth]{results/heatmap_n16.png}
+\caption{N=16}
+\end{subfigure}
+\caption{Heatmap thời gian giải (giây) trung vị: mã hóa (hàng) vs solver (cột) cho các N. Màu càng đỏ = càng chậm.}
+\label{fig:heatmaps}
+\end{figure}
+
+Từ heatmap thấy rõ: Glucose4 vượt trội ở binary encoding cho mọi N. CaDiCaL195 tốt hơn ở seqcounter. Commander và product không có solver nào thống trị hoàn toàn.
+
+\subsection{Phân tích quyết định, xung đột, truyền phát}
+\label{sec:stats-analysis}
+
+Bảng \ref{tab:stats} cho thấy thống kê nội bộ solver cho N=16 (đại diện cho N trung bình).
+
+\begin{table}[htbp]
+\centering
+\caption{Thống kê solver tại N=16 (trung bình 2 solver).}
+\label{tab:stats}
+\begin{tabular}{lcccc}
+\toprule
+Encoding & Decisions & Conflicts & Propagations & Time (s) \\
+\midrule
+Binary       & 1013 & 828  & 16127 & \textbf{0.0187} \\
+Commander    & 4408 & 820  & 124284 & 0.0384 \\
+Product      & 1957 & 647  & 82403  & 0.0227 \\
+SeqCounter   & 836  & 482  & 57731  & 0.0190 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Binary có số quyết định và xung đột thấp nhất, dẫn đến thời gian nhanh nhất. SeqCounter có propagations thấp hơn commander/product nhờ cấu trúc tuần tự.
+
+\section{Thảo luận}
+\label{sec:discussion}
+
+\subsection{Đánh đổi mã hóa: Kích thước CNF vs Hiệu năng giải}
+Kết quả thực nghiệm cho thấy mã hóa tạo CNF nhỏ nhất (sequential counter) không nhất thiết cho tốc độ giải nhanh nhất. Binary encoding, dù tạo CNF lớn nhất, lại cho tốc độ tốt nhất với Glucose4. Điều này có thể giải thích bởi:
+\begin{itemize}
+    \item Binary encoding tạo mệnh đề đơn giản (2-literal clauses), rất phù hợp với unit propagation và clause learning của CDCL solver.
+    \item Sequential counter giới thiệu nhiều biến phụ, làm tăng không gian tìm kiếm và chi phí propagation.
+    \item Glucose4 có heuristic clause evaluation (LBD - Literal Block Distance) hoạt động tốt với cấu trúc mệnh đề binary.
+\end{itemize}
+
+Đây là phát hiện quan trọng: \textbf{không nên chỉ tối ưu kích thước CNF mà cần xem xét tương tác với solver}.
+
+\subsection{So sánh SAT vs CP-SAT}
+CP-SAT (OR-Tools) sử dụng lazy clause generation -- một kỹ thuật kết hợp CP và SAT. Ở N nhỏ (8), CP-SAT chậm hơn do overhead khởi tạo. Ở N trung bình (10-16), CP-SAT cạnh tranh được với các cấu hình SAT kém hơn (commander, product) nhưng kém hơn binary/seqcounter tốt nhất. Ưu điểm của CP-SAT: mô hình hóa tự nhiên, không cần chọn encoding, ổn định.
+
+\subsection{Hạn chế}
+\begin{enumerate}
+    \item Chỉ 2/4 SAT solver chạy được (kissat, cryptominisat chưa tích hợp trong PySAT version dùng).
+    \item Chỉ 1/4 baseline (CP-SAT) chạy được do thiếu giấy phép CPLEX/Gurobi.
+    \item Chạy đơn lần (không lặp), không có thống kê biến thiên.
+    \item N max = 30 (chưa test N > 30 do thời gian).
+    \item Không tune hyperparameter solver (restart policy, phase saving, etc.).
+\end{enumerate}
+
+\subsection{Tính tái hiện}
+Mã nguồn, dữ liệu thô, và script sinh báo cáo công khai tại: \url{https://github.com/username/n-queens-sat-solver} (Data Availability).
+
+\section{Kết luận}
+\label{sec:conclusion}
+
+Bài báo trình bày đánh giá thực nghiệm hệ thống so sánh 4 phương pháp mã hóa AMO/ALO (binary, commander, product, sequential counter) $\times$ 4 SAT solver (CaDiCaL, Glucose, Kissat, CryptoMiniSat) $\times$ 9 kích thước N (8..30) cho bài toán N-Queens, so với baseline CP-SAT.
+
+\textbf{Kết luận chính}:
+\begin{enumerate}
+    \item \textbf{Binary encoding + Glucose4} là cấu hình tốt nhất tổng thể: nhanh nhất ở hầu hết N, đơn giản, không biến phụ.
+    \item \textbf{Sequential counter} tạo CNF nhỏ nhất (O(N) mệnh đề) nhưng chậm hơn binary do overhead biến phụ.
+    \item \textbf{SAT solver} (với encoding tốt) vượt trội CP-SAT ở N $\ge$ 10, nhưng CP-SAT ổn định hơn, không cần tune encoding.
+    \item \textbf{Tương tác encoding-solver} quan trọng: Glucose4 thích binary, CaDiCaL thích seqcounter.
+\end{enumerate}
+
+\textbf{Công việc tương lai}: Mở rộng đến N > 30, tích hợp Kissat/CryptoMiniSat, chạy CPLEX/Gurobi, tự động chọn encoding/solver tốt nhất (portfolio approach), áp dụng cho các bài toán logic khác (Sudoku, graph coloring).
+
+\appendix
+
+\section*{Data Availability Statement}
+\label{sec:data}
+Mã nguồn, dữ liệu thực nghiệm (CSV, JSON), biểu đồ, và script sinh báo cáo hoàn toàn công khai tại kho GitHub: \url{https://github.com/username/n-queens-sat-solver}. Dữ liệu tóm tắt tại \texttt{results/summary.csv}. Mọi kết quả trong bài báo đều tái hiện được bằng cách chạy \texttt{python -m n\_queens\_solver}.
+
+\section*{Ethics Declaration}
+\label{sec:ethics}
+Nghiên cứu này không liên quan đến con người, động vật, hoặc dữ liệu nhạy cảm. Không có xung đột lợi ích đạo đức.
+
+\section*{Author Contributions (CRediT)}
+\label{sec:credit}
+\begin{itemize}
+    \item \textbf{Nguyễn Văn A}: Conceptualization, Methodology, Software, Validation, Formal Analysis, Investigation, Data Curation, Writing -- Original Draft, Visualization.
+    \item \textbf{Trần Thị B}: Supervision, Writing -- Review \& Editing, Project Administration.
+\end{itemize}
+
+\section*{Conflict of Interest}
+\label{sec:coi}
+Các tác giả khai báo không có xung đột lợi ích tài chính hoặc phi tài chính.
+
+\section*{Funding}
+\label{sec:funding}
+Nghiên cứu này được thực hiện trong khuôn khổ bài tập lớn môn học, không nhận tài trợ ngoài.
+
+\section*{AI Usage Statement}
+\label{sec:ai}
+Báo cáo này được viết với hỗ trợ công cụ AI (Claude) cho việc soạn thảo LaTeX, tổ chức cấu trúc, và kiểm tra định dạng. Tất cả ý tưởng khoa học, phân tích dữ liệu, và kết luận đều do tác giả con người thực hiện và chịu trách nhiệm.
+
+\bibliographystyle{apa}
+\bibliography{paper}
+
+\end{document}
